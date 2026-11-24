@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fruit Ninja – Hand Tracking</title>
+<style>
+  :root{
+    --ink:#0d0818;
+    --paper:#fff4e0;
+    --lime:#b6e35a;
+    --hot:#ff3d6e;
+    --sun:#ffc43d;
+    --neon:#00ffff;
+    --neon2:#ff00ff;
+    --glow:#00ff88;
+  }
+  *{box-sizing:border-box;margin:0}
+  html,body{height:100%;background:var(--ink);color:var(--paper);font-family:"Trebuchet MS","Segoe UI",sans-serif;overflow:hidden}
+  #stage{position:fixed;inset:0}
+  video{display:none}
+  canvas{position:absolute;inset:0;width:100%;height:100%}
+  #hud{position:absolute;top:14px;left:18px;right:18px;display:flex;justify-content:space-between;pointer-events:none;font-weight:800;font-size:clamp(20px,4vw,34px);text-shadow:0 3px 0 rgba(0,0,0,.35)}
+  #lives{letter-spacing:4px;color:var(--hot)}
+  #sig{position:absolute;bottom:10px;right:16px;font-style:italic;font-size:15px;opacity:.85;pointer-events:none}
+  #menu{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:rgba(13,8,24,.92);text-align:center;padding:24px;z-index:10}
+  #menu.hide{display:none}
+  h1{font-size:clamp(40px,9vw,88px);line-height:.95;color:var(--sun);transform:rotate(-3deg);text-shadow:4px 4px 0 var(--hot);animation:titlePulse 2s ease-in-out infinite}
+  @keyframes titlePulse{0%,100%{text-shadow:4px 4px 0 var(--hot),0 0 30px var(--sun)}50%{text-shadow:4px 4px 0 var(--hot),0 0 50px var(--neon),0 0 80px var(--neon)}}
+  #menu p{max-width:460px;line-height:1.5;font-size:17px}
+  button{font:inherit;font-weight:800;font-size:20px;padding:14px 34px;border:0;border-radius:40px;background:var(--lime);color:var(--ink);cursor:pointer;box-shadow:0 5px 0 #6f9a2a;transition:all .15s}
+  button:hover{transform:scale(1.05);box-shadow:0 8px 0 #6f9a2a,0 0 20px var(--lime)}
+  button:active{transform:translateY(3px);box-shadow:0 2px 0 #6f9a2a}
+  button.secondary{background:var(--sun);box-shadow:0 5px 0 #b88a1c}
+  button.secondary:hover{box-shadow:0 8px 0 #b88a1c,0 0 20px var(--sun)}
+  #status{font-size:14px;opacity:.8;min-height:20px}
+  .by{font-style:italic;opacity:.9}
+  @media (prefers-reduced-motion:reduce){h1{transform:none;animation:none}}
+
+  /* Neon hand guide zone */
+  #handGuide{position:absolute;bottom:80px;left:50%;transform:translateX(-50%);width:280px;height:280px;pointer-events:none;opacity:0;transition:opacity .5s}
+  #handGuide.visible{opacity:1}
+  .guide-ring{position:absolute;inset:0;border:3px solid var(--neon);border-radius:50%;animation:pulseRing 2s ease-out infinite;box-shadow:0 0 30px var(--neon),inset 0 0 30px rgba(0,255,255,.1)}
+  .guide-ring:nth-child(2){animation-delay:.4s;border-color:var(--neon2);box-shadow:0 0 30px var(--neon2),inset 0 0 30px rgba(255,0,255,.1)}
+  .guide-ring:nth-child(3){animation-delay:.8s;border-color:var(--glow);box-shadow:0 0 30px var(--glow),inset 0 0 30px rgba(0,255,136,.1)}
+  @keyframes pulseRing{0%{transform:scale(.6);opacity:1}100%{transform:scale(1.3);opacity:0}}
+  .guide-hand{position:absolute;bottom:-20px;left:50%;transform:translateX(-50%);font-size:120px;filter:drop-shadow(0 0 20px var(--neon)) drop-shadow(0 0 40px var(--neon));animation:handFloat 1.5s ease-in-out infinite}
+  @keyframes handFloat{0%,100%{transform:translateX(-50%) translateY(0) rotate(-15deg)}50%{transform:translateX(-50%) translateY(-15px) rotate(-10deg)}}
+  .guide-label{position:absolute;bottom:-60px;left:0;right:0;text-align:center;font-size:14px;color:var(--neon);font-weight:800;letter-spacing:3px;text-transform:uppercase;text-shadow:0 0 10px var(--neon);animation:labelBlink 1.5s ease-in-out infinite}
+  @keyframes labelBlink{0%,100%{opacity:.5}50%{opacity:1}}
+
+  /* Combo display */
+  #combo{position:absolute;top:80px;left:50%;transform:translateX(-50%);font-size:clamp(28px,6vw,56px);font-weight:900;color:var(--neon);text-shadow:0 0 20px var(--neon),0 0 40px var(--neon);opacity:0;transform:translateX(-50%) scale(.5);transition:all .15s;pointer-events:none;z-index:5}
+  #combo.show{opacity:1;transform:translateX(-50%) scale(1)}
+  #comboText{display:block;font-size:clamp(12px,2.5vw,18px);color:var(--sun);text-shadow:0 0 15px var(--sun)}
+
+  /* Level up */
+  #levelUp{position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);font-size:clamp(32px,7vw,64px);font-weight:900;color:var(--glow);text-shadow:0 0 30px var(--glow),0 0 60px var(--glow);opacity:0;transform:translate(-50%,-50%) scale(.3);transition:all .3s cubic-bezier(.17,.67,.83,.67);pointer-events:none;z-index:5}
+  #levelUp.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+  #levelUpText{display:block;font-size:clamp(16px,3vw,24px);color:var(--neon);text-shadow:0 0 20px var(--neon)}
+
+  /* Screen shake */
+  .shake{animation:shake .4s cubic-bezier(.36,.07,.19,.97)}
+  @keyframes shake{0%,100%{transform:translateX(0)}10%,30%,50%,70%,90%{transform:translateX(-8px)}20%,40%,60%,80%{transform:translateX(8px)}}
+
+  /* Particle burst text */
+  .burstText{position:absolute;font-weight:900;pointer-events:none;animation:burstText .8s cubic-bezier(.17,.67,.83,.67) forwards;z-index:5}
+  @keyframes burstText{0%{opacity:1;transform:scale(1) translateY(0)}100%{opacity:0;transform:scale(1.5) translateY(-60px)}}
+
+  /* Volume control */
+  #volumeBtn{position:absolute;top:14px;right:18px;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.1);border:2px solid rgba(255,255,255,.3);color:var(--paper);font-size:24px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;z-index:10}
+  #volumeBtn:hover{background:rgba(255,255,255,.2);border-color:var(--neon);box-shadow:0 0 20px var(--neon)}
+  #volumeBtn.muted{border-color:var(--hot);color:var(--hot)}
+  #volumeBtn.muted:hover{box-shadow:0 0 20px var(--hot)}
+</style>
+</head>
+<body>
+<div id="stage">
+  <video id="cam" playsinline></video>
+  <canvas id="c"></canvas>
+
+  <!-- Neon hand guide zone -->
+  <div id="handGuide">
+    <div class="guide-ring"></div>
+    <div class="guide-ring"></div>
+    <div class="guide-ring"></div>
+    <div class="guide-hand">👋</div>
+    <div class="guide-label">Place hand here</div>
+  </div>
+
+  <div id="hud">
+    <span id="score">Score 0</span>
+    <span id="lives">♥♥♥♥♥</span>
+  </div>
+  <button id="volumeBtn" title="Toggle sound">🔊</button>
+  <div id="sig">by RAAS SERVICES</div>
+  <div id="combo"><span id="comboCount">0</span><span id="comboText">COMBO</span></div>
+  <div id="levelUp"><span id="levelNum">1</span><span id="levelUpText">LEVEL UP</span></div>
+  <div id="menu">
+    <h1>Fruit<br>Ninja</h1>
+    <p id="msg">Wave your index finger in front of the camera to slice fruit. Avoid the bombs. Miss three fruits and it's over. Mouse or touch works too.</p>
+    <button id="startCam">Play with camera</button>
+    <button id="startMouse" class="secondary">Play with mouse / touch</button>
+    <div id="status"></div>
+    <div class="by">Made by RAAS SERVICES</div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" crossorigin="anonymous"></script>
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const video=document.getElementById('cam');
+const menu=document.getElementById('menu'),statusEl=document.getElementById('status');
+const handGuide=document.getElementById('handGuide');
+const comboEl=document.getElementById('combo');
+const comboCount=document.getElementById('comboCount');
+const levelUpEl=document.getElementById('levelUp');
+const levelNum=document.getElementById('levelNum');
+const volumeBtn=document.getElementById('volumeBtn');
+let W,H;
+function resize(){W=cv.width=innerWidth;H=cv.height=innerHeight}
+addEventListener('resize',resize);resize();
+
+const FRUITS=[
+ {e:'🍉',c:'#ff4d6d'},{e:'🍊',c:'#ffa94d'},{e:'🍎',c:'#ff5252'},
+ {e:'🍌',c:'#ffe066'},{e:'🍍',c:'#ffd43b'},{e:'🥝',c:'#94d82d'},{e:'🍓',c:'#fa5252'}
+];
+let objs=[],halves=[],particles=[],trail=[],score=0,lives=5,running=false,spawnT=0,t0=0,useCam=false,mirror=true;
+let pointer=null,lastPointer=null;
+let combo=0,lastSliceTime=0,comboTimeout=null,level=1,nextLevelScore=50;
+let flash=0,screenShake=0;
+
+// ============ AUDIO SYSTEM ============
+const audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+let audioEnabled=true;
+
+function resumeAudio(){
+  if(audioCtx.state==='suspended')audioCtx.resume();
+}
+
+function playTone(freq,type,duration,volume=0.3,startTime=0){
+  if(!audioEnabled)return;
+  resumeAudio();
+  const osc=audioCtx.createOscillator();
+  const gain=audioCtx.createGain();
+  osc.type=type;
+  osc.frequency.value=freq;
+  gain.gain.value=volume;
+  osc.connect(gain).connect(audioCtx.destination);
+  const t=audioCtx.currentTime+startTime;
+  osc.start(t);
+  osc.stop(t+duration);
+  return {osc,gain};
+}
+
+function playSlice(){
+  // Sharp slicing sound - multiple harmonics
+  playTone(800,'square',0.08,0.15);
+  playTone(1200,'square',0.06,0.1,0.02);
+  playTone(2000,'sine',0.04,0.08,0.04);
+  playTone(400,'sawtooth',0.1,0.12);
+}
+
+function playBomb(){
+  // Explosion sound
+  playTone(150,'sawtooth',0.3,0.3);
+  playTone(100,'square',0.4,0.25,0.05);
+  playTone(80,'sine',0.5,0.2,0.1);
+  // Noise burst
+  const buffer=audioCtx.createBuffer(1,audioCtx.sampleRate*0.3,audioCtx.sampleRate);
+  const data=buffer.getChannelData(0);
+  for(let i=0;i<data.length;i++)data[i]=(Math.random()*2-1)*Math.pow(1-i/data.length,2);
+  const src=audioCtx.createBufferSource();
+  src.buffer=buffer;
+  const gain=audioCtx.createGain();
+  gain.gain.value=0.2;
+  src.connect(gain).connect(audioCtx.destination);
+  src.start();
+}
+
+function playFruitPop(fruitColor){
+  // Different pitch based on fruit
+  const baseFreq=600+Math.random()*400;
+  playTone(baseFreq,'sine',0.15,0.2);
+  playTone(baseFreq*1.5,'triangle',0.1,0.15,0.02);
+  playTone(baseFreq*2,'sine',0.08,0.1,0.04);
+}
+
+function playMiss(){
+  // Sad trombone-ish
+  playTone(400,'sine',0.2,0.2);
+  playTone(300,'sine',0.2,0.15,0.15);
+  playTone(250,'sine',0.3,0.15,0.3);
+}
+
+function playLevelUp(){
+  // Victory fanfare
+  const notes=[523,659,784,1047]; // C5 E5 G5 C6
+  notes.forEach((f,i)=>playTone(f,'triangle',0.2,0.2,i*0.1));
+  playTone(1047,'sine',0.5,0.15,0.4);
+}
+
+function playGameOver(){
+  // Descending minor
+  playTone(392,'sine',0.4,0.2);
+  playTone(349,'sine',0.4,0.2,0.3);
+  playTone(311,'sine',0.4,0.2,0.6);
+  playTone(262,'sine',0.8,0.2,0.9);
+}
+
+function playCombo(){
+  // Rising tones for combo
+  const c=Math.min(combo,10);
+  for(let i=0;i<c;i++){
+    playTone(400+i*100,'sine',0.08,0.1,i*0.03);
+  }
+}
+
+volumeBtn.onclick=()=>{
+  audioEnabled=!audioEnabled;
+  volumeBtn.textContent=audioEnabled?'🔊':'🔇';
+  volumeBtn.classList.toggle('muted',!audioEnabled);
+};
+
+// ============ GAME LOGIC ============
+function spawn(){
+  const bomb=Math.random()<Math.min(.08+score/1500,.22);
+  const f=FRUITS[Math.floor(Math.random()*FRUITS.length)];
+  const x=W*(.15+Math.random()*.7);
+  const size=Math.max(64,Math.min(W,H)*.11); // Larger base size
+  const speedMult=1+level*0.15;
+  objs.push({x,y:H+size,vx:(W/2-x)*(.25+Math.random()*.35)/60*speedMult,vy:-(H*.0215+Math.random()*H*.006)*speedMult,
+    g:H*.00048,r:size*.6,size,bomb,f,rot:0,vr:(Math.random()-.5)*.12,alive:true});
+}
+
+function burst(x,y,color,n=12){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*6.28,s=3+Math.random()*8;
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-2,life:1,color,r:3+Math.random()*5});
+  }
+  // Fewer extra particles for performance
+  for(let i=0;i<5;i++){
+    const a=Math.random()*6.28,s=6+Math.random()*12;
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-4,life:1.2,color,r:4+Math.random()*6,trail:true});
+  }
+}
+
+function segHitsCircle(ax,ay,bx,by,cx,cy,r){
+  const dx=bx-ax,dy=by-ay,l2=dx*dx+dy*dy||1;
+  let t=((cx-ax)*dx+(cy-ay)*dy)/l2;t=Math.max(0,Math.min(1,t));
+  const px=ax+t*dx-cx,py=ay+t*dy-cy;return px*px+py*py<r*r;
+}
+
+function createBurstText(x,y,text,color){
+  const el=document.createElement('div');
+  el.className='burstText';
+  el.textContent=text;
+  el.style.left=x+'px';
+  el.style.top=y+'px';
+  el.style.color=color;
+  el.style.fontSize=clamp(24,5,40)+'px';
+  el.style.textShadow = '0 0 10px #fff, 0 0 20px ' + color + ', 0 0 30px ' + color;
+  el.style.fontWeight = '900';
+  document.getElementById('stage').appendChild(el);
+  setTimeout(()=>el.remove(),800);
+}
+
+function clamp(val,min,max){return Math.max(min,Math.min(max,val))}
+
+function slice(a,b){
+  const speed=Math.hypot(b.x-a.x,b.y-a.y);
+  if(speed<8)return;
+  let hitAny=false;
+  for(const o of objs){
+    if(!o.alive)continue;
+    if(segHitsCircle(a.x,a.y,b.x,b.y,o.x,o.y,o.r)){
+      o.alive=false;
+      hitAny=true;
+      if(o.bomb){
+        burst(o.x,o.y,'#ffb703',40);
+        createBurstText(o.x,o.y,'💥 BOOM!','#ffb703');
+        playBomb();
+        playGameOver();
+        lives=0;
+        flash=1;
+        screenShake=15;
+        document.getElementById('stage').classList.add('shake');
+        setTimeout(()=>document.getElementById('stage').classList.remove('shake'),400);
+      }else{
+        score++;
+        combo++;
+        lastSliceTime=performance.now();
+        clearTimeout(comboTimeout);
+        comboTimeout=setTimeout(()=>{combo=0;updateComboDisplay();},1000);
+        updateComboDisplay();
+        if(combo>=3)playCombo();
+        playSlice();
+        playFruitPop(o.f.c);
+        burst(o.x,o.y,o.f.c,22);
+        createBurstText(o.x,o.y,'+'+(10*combo),o.f.c);
+        const ang=Math.atan2(b.y-a.y,b.x-a.x);
+        for(const s of[-1,1])halves.push({x:o.x,y:o.y,vx:o.vx+s*Math.cos(ang+1.57)*3,vy:o.vy+s*Math.sin(ang+1.57)*3,
+          g:o.g,rot:o.rot,vr:s*.08,size:o.size,e:o.f.e,side:s,life:1});
+        // Level up check
+        if(score>=nextLevelScore){
+          level++;
+          nextLevelScore=level*50;
+          levelNum.textContent=level;
+          levelUpEl.classList.add('show');
+          playLevelUp();
+          setTimeout(()=>levelUpEl.classList.remove('show'),1500);
+        }
+      }
+    }
+  }
+  if(!hitAny && speed>15){
+    // Air slice visual feedback
+    ctx.strokeStyle='rgba(0,255,255,0.5)';
+    ctx.lineWidth=3;
+    ctx.beginPath();
+    ctx.moveTo(a.x,a.y);
+    ctx.lineTo(b.x,b.y);
+    ctx.stroke();
+  }
+}
+
+function updateComboDisplay(){
+  comboCount.textContent=combo;
+  if(combo>=2){
+    comboEl.classList.add('show');
+    comboEl.style.color=combo>=5?'#ff3d6e':combo>=3?'#ffc43d':'#00ffff';
+    comboEl.style.textShadow=`0 0 20px ${combo>=5?'#ff3d6e':combo>=3?'#ffc43d':'#00ffff'},0 0 40px ${combo>=5?'#ff3d6e':combo>=3?'#ffc43d':'#00ffff'}`;
+  }else{
+    comboEl.classList.remove('show');
+  }
+}
+
+function update(dt){
+  if(!running)return;
+  spawnT-=dt;
+  if(spawnT<=0){
+    const n=1+(Math.random()<Math.min(.15+score/200,.6)?1:0)+(Math.random()<.15?1:0);
+    for(let i=0;i<n;i++)spawn();
+    spawnT=Math.max(400,1000-score*6-level*30);
+  }
+  for(const o of objs){
+    o.vy+=o.g*dt/16.7;o.x+=o.vx*dt/16.7;o.y+=o.vy*dt/16.7;o.rot+=o.vr;
+    if(o.y>H+o.size*1.2&&o.vy>0&&o.alive){o.alive=false;if(!o.bomb){lives--;playMiss();}}
+  }
+  objs=objs.filter(o=>o.alive||false);
+  for(const h of halves){h.vy+=h.g*dt/16.7*1.2;h.x+=h.vx;h.y+=h.vy;h.rot+=h.vr;h.life-=.012}
+  halves=halves.filter(h=>h.life>0&&h.y<H+100);
+  for(const p of particles){p.x+=p.vx;p.y+=p.vy;p.vy+=.25;p.life-=.025}
+  particles=particles.filter(p=>p.life>0);
+  if(lives<=0)gameOver();
+
+  // Screen shake decay
+  if(screenShake>0)screenShake*=0.9;
+
+  // Hide hand guide after first slice in camera mode
+  if(useCam && trail.length>0){
+    handGuide.classList.remove('visible');
+  }
+}
+
+function draw(){
+  // Apply screen shake
+  ctx.save();
+  if(screenShake>0.5){
+    ctx.translate((Math.random()-1)*screenShake,(Math.random()-1)*screenShake);
+  }
+
+  ctx.clearRect(0,0,W,H);
+
+  // Animated background - brighter in upper play area
+  const time=performance.now()*0.001;
+  const bg=ctx.createRadialGradient(W/2,H*0.3,0,W/2,H*0.3,Math.max(W,H));
+  bg.addColorStop(0,`rgba(40,20,70,${0.85+0.1*Math.sin(time)})`);
+  bg.addColorStop(0.4,`rgba(25,10,45,${0.95})`);
+  bg.addColorStop(1,'rgba(13,8,24,1)');
+  ctx.fillStyle=bg;
+  ctx.fillRect(0,0,W,H);
+
+  // Subtle grid lines for neon aesthetic (coarser for performance)
+  ctx.strokeStyle='rgba(0,255,255,0.03)';
+  ctx.lineWidth=1;
+  const gridSize=100;
+  for(let x=0;x<W;x+=gridSize){
+    ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();
+  }
+  for(let y=0;y<H;y+=gridSize){
+    ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();
+  }
+
+  // Floating particles in background (reduced for performance)
+  for(let i=0;i<8;i++){
+    const x=(i*127+time*20)%W;
+    const y=(i*89+time*15)%H;
+    const alpha=0.1+0.08*Math.sin(time+i);
+    ctx.fillStyle=`rgba(0,255,255,${alpha})`;
+    ctx.beginPath();ctx.arc(x,y,1+Math.sin(time*2+i),0,6.28);ctx.fill();
+  }
+
+  // Camera feed with neon tint
+  if(useCam&&video.readyState>=2){
+    ctx.save();ctx.globalAlpha=.2;
+    if(mirror){ctx.translate(W,0);ctx.scale(-1,1)}
+    const vr=video.videoWidth/video.videoHeight,cr=W/H;let dw=W,dh=H,dx=0,dy=0;
+    if(vr>cr){dw=H*vr;dx=(W-dw)/2}else{dh=W/vr;dy=(H-dh)/2}
+    ctx.drawImage(video,dx,dy,dw,dh);ctx.restore();
+  }
+
+  ctx.textAlign='center';ctx.textBaseline='middle';
+
+  // Draw fruits - MUCH more visible with outlines and bright backgrounds
+  for(const o of objs){
+    ctx.save();ctx.translate(o.x,o.y);ctx.rotate(o.rot);
+
+    const fruitSize = o.size * 1.3; // Larger fruits
+    const isBomb = o.bomb;
+    const fruitColor = isBomb ? '#ffb703' : o.f.c;
+    const glowColor = isBomb ? '#ffd43b' : o.f.c;
+
+    // Bright background circle behind fruit for contrast
+    const bgGradient = ctx.createRadialGradient(0,0,0,0,0,fruitSize*0.9);
+    bgGradient.addColorStop(0, fruitColor + 'CC');
+    bgGradient.addColorStop(0.5, fruitColor + '66');
+    bgGradient.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = bgGradient;
+    ctx.beginPath();ctx.arc(0,0,fruitSize*0.85,0,6.28);ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Strong outer glow
+    ctx.shadowColor = glowColor;
+    ctx.shadowBlur = 35;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+
+    // White outline for maximum contrast
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 4;
+    ctx.font = fruitSize + 'px serif';
+    ctx.strokeText(isBomb ? '💣' : o.f.e, 0, 0);
+
+    // Bright inner glow
+    ctx.shadowColor = '#ffffff';
+    ctx.shadowBlur = 15;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(isBomb ? '💣' : o.f.e, 0, 0);
+
+    // Main fruit emoji with fruit color tint
+    ctx.shadowColor = glowColor;
+    ctx.shadowBlur = 25;
+    ctx.fillStyle = '#ffffff';
+    ctx.font = fruitSize + 'px serif';
+    ctx.fillText(isBomb ? '💣' : o.f.e, 0, 0);
+
+    ctx.restore();
+  }
+
+  // Draw halves - more visible
+  for(const h of halves){
+    ctx.save();ctx.globalAlpha=Math.max(0,h.life);ctx.translate(h.x,h.y);ctx.rotate(h.rot);
+    const halfSize = h.size * 1.3;
+    ctx.font = halfSize + 'px serif';
+    ctx.shadowColor = '#ffffff';
+    ctx.shadowBlur = 15;
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3;
+    if(h.side<0)ctx.rect(-halfSize,-halfSize,halfSize,halfSize*2);else ctx.rect(0,-halfSize,halfSize,halfSize*2);
+    ctx.clip();
+    ctx.strokeText(h.e, 0, 0);
+    ctx.fillText(h.e, 0, 0);
+    ctx.restore();
+  }
+
+  // Draw particles with trails
+  for(const p of particles){
+    ctx.globalAlpha=Math.max(0,p.life);
+    ctx.fillStyle=p.color;
+    ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.28);ctx.fill();
+    if(p.trail){
+      ctx.globalAlpha=Math.max(0,p.life)*0.5;
+      ctx.beginPath();ctx.arc(p.x-p.vx*2,p.y-p.vy*2,p.r*0.7,0,6.28);ctx.fill();
+    }
+  }
+  ctx.globalAlpha=1;
+  ctx.shadowBlur=0;
+
+  // Knife blade - draw at current pointer position with trail (optimized)
+  const now=performance.now();
+  trail=trail.filter(p=>now-p.t<150); // Even shorter trail
+
+  // Draw knife at current pointer position
+  if(pointer){
+    ctx.save();
+    ctx.translate(pointer.x, pointer.y);
+
+    // Calculate knife angle from trail direction
+    let knifeAngle = -Math.PI/4;
+    if(trail.length >= 2){
+      const last = trail[trail.length-1];
+      const prev = trail[trail.length-2];
+      knifeAngle = Math.atan2(last.y - prev.y, last.x - prev.x) - Math.PI/2;
+    }
+    ctx.rotate(knifeAngle);
+
+    // Simple knife glow
+    ctx.shadowColor = '#00ffff';
+    ctx.shadowBlur = 15;
+
+    const bladeLen = 70;
+    const bladeW = 10;
+    const handleLen = 28;
+    const handleW = 14;
+
+    // Blade - simple path, no gradient for performance
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#cccccc';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-bladeW/2, 0);
+    ctx.lineTo(-bladeW/3, -bladeLen*0.3);
+    ctx.lineTo(0, -bladeLen);
+    ctx.lineTo(bladeW/3, -bladeLen*0.3);
+    ctx.lineTo(bladeW/2, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Guard
+    ctx.fillStyle = '#333';
+    ctx.shadowBlur = 8;
+    ctx.fillRect(-handleW/2-3, 0, handleW+6, 6);
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-handleW/2-3, 0, handleW+6, 6);
+
+    // Handle
+    ctx.fillStyle = '#2a1a0a';
+    ctx.shadowBlur = 10;
+    ctx.fillRect(-handleW/2, 4, handleW, handleLen);
+    ctx.strokeStyle = '#443311';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-handleW/2, 4, handleW, handleLen);
+
+    // Simple rivets
+    ctx.fillStyle = '#664422';
+    for(let i=0; i<2; i++){
+      const y = 8 + i * (handleLen-8);
+      ctx.fillRect(-handleW/2+2, y, 2, 2);
+      ctx.fillRect(handleW/2-4, y, 2, 2);
+    }
+
+    // Pommel
+    ctx.fillStyle = '#444';
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.arc(0, handleLen+6, handleW/2+2, 0, 6.28);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  // Simple trail line (lightweight)
+  if(trail.length>1){
+    ctx.lineCap='round';ctx.lineJoin='round';
+    ctx.strokeStyle='rgba(0,255,255,0.35)';
+    ctx.lineWidth=3;
+    ctx.shadowColor='#00ffff';
+    ctx.shadowBlur=8;
+    ctx.beginPath();
+    ctx.moveTo(trail[0].x, trail[0].y);
+    for(let i=1;i<trail.length;i++){
+      ctx.lineTo(trail[i].x, trail[i].y);
+    }
+    ctx.stroke();
+    ctx.shadowBlur=0;
+  }
+
+  if(flash>0){ctx.fillStyle=`rgba(255,80,80,${flash})`;ctx.fillRect(0,0,W,H);flash-=.03}
+
+  document.getElementById('score').textContent='Score '+score;
+  document.getElementById('lives').textContent='♥'.repeat(Math.max(0,lives))+'♡'.repeat(Math.max(0,5-lives));
+
+  ctx.restore();
+}
+
+function movePointer(x,y){
+  const p={x,y,t:performance.now()};
+  trail.push(p);
+  if(pointer&&running)slice(pointer,p);
+  pointer=p;
+}
+
+let last=performance.now();
+function loop(now){const dt=Math.min(40,now-last);last=now;update(dt);draw();requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+
+function startGame(){
+  objs=[];halves=[];particles=[];trail=[];score=0;lives=5;spawnT=300;running=true;pointer=null;flash=0;
+  combo=0;level=1;nextLevelScore=50;screenShake=0;
+  updateComboDisplay();
+  levelNum.textContent=1;
+  menu.classList.add('hide');
+  if(useCam){
+    handGuide.classList.add('visible');
+    // Auto-hide after 5 seconds
+    setTimeout(()=>handGuide.classList.remove('visible'),5000);
+  }
+}
+function gameOver(){
+  running=false;
+  document.querySelector('h1').innerHTML='Game<br>Over';
+  document.getElementById('msg').textContent='You sliced '+score+' fruit'+(score===1?'':'s')+'. Level reached: '+level+'!';
+  document.getElementById('startCam').textContent=useCam?'Play again':'Play with camera';
+  document.getElementById('startMouse').textContent='Play with mouse / touch';
+  menu.classList.remove('hide');
+  handGuide.classList.remove('visible');
+}
+
+// Mouse / touch
+cv.addEventListener('pointermove',e=>{if(!useCam&&running)movePointer(e.clientX,e.clientY)});
+cv.addEventListener('pointerdown',e=>{if(!useCam){resumeAudio();pointer={x:e.clientX,y:e.clientY,t:performance.now()}}});
+cv.style.touchAction='none';
+
+document.getElementById('startMouse').onclick=()=>{useCam=false;resumeAudio();startGame()};
+
+// MediaPipe hand tracking
+let handsReady=false,hands,cameraUtil;
+document.getElementById('startCam').onclick=async()=>{
+  useCam=true;
+  if(handsReady){resumeAudio();startGame();return}
+  if(typeof Hands==='undefined'||typeof Camera==='undefined'){
+    statusEl.textContent='Could not load MediaPipe. Check your internet connection, or play with mouse.';return}
+  statusEl.textContent='Loading hand tracking model, allow camera access…';
+  try{
+    hands=new Hands({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${f}`});
+    hands.setOptions({maxNumHands:2,modelComplexity:1,minDetectionConfidence:.6,minTrackingConfidence:.5});
+    hands.onResults(r=>{
+      if(!handsReady){handsReady=true;statusEl.textContent='';resumeAudio();startGame()}
+      if(!r.multiHandLandmarks||!r.multiHandLandmarks.length){pointer=null;return}
+      for(const lm of r.multiHandLandmarks){
+        const tip=lm[8];
+        const x=(mirror?1-tip.x:tip.x)*W,y=tip.y*H;
+        const p={x,y,t:performance.now()};
+        trail.push(p);
+        if(pointer&&running)slice(pointer,p);
+        pointer=p;
+      }
+    });
+    cameraUtil=new Camera(video,{onFrame:async()=>{await hands.send({image:video})},width:640,height:480});
+    await cameraUtil.start();
+  }catch(err){
+    statusEl.textContent='Camera unavailable: '+err.message+'. Try mouse mode.';useCam=false;
+  }
+};
+
+// Keyboard shortcuts
+document.addEventListener('keydown',e=>{
+  if(e.code==='Space'&&!running){resumeAudio();useCam?document.getElementById('startCam').click():document.getElementById('startMouse').click();}
+  if(e.code==='KeyM'){volumeBtn.click();}
+});
+</script>
+</body>
+</html>
